@@ -46,79 +46,55 @@ class ViewController: UIViewController {
         // iteration()
     }
     
-    func iteration(current: Int = 1) {
-        guard current <= maxIterations else {
-            button.isEnabled = true  // re-enable the button at the end
-            return
-        }
+    @MainActor
+    func iteration(current: Int = 1) async {
+        guard current <= maxIterations else { return }
         
         // Generate random points on the fly
-        //  x = Double(arc4random_uniform(maxRandom)) / Double(maxRandom)
-        // y = Double(arc4random_uniform(maxRandom)) / Double(maxRandom)
-        x = Double.random(in: 0...1)
-        y = Double.random(in: 0...1)
-        
-        if radius <= 1.0 {
+        let xLocal = Double.random(in: 0...1)
+        let yLocal = Double.random(in: 0...1)
+        let r = sqrt(xLocal * xLocal + yLocal * yLocal)
+        let pointInCircle = r <= 1.0
+        if pointInCircle {
             innen += 1
-            isIn = true
-        } else {
-            isIn = false
         }
         
+        // Plot the point (make sure plot is run on the main actor)
+        await plot(x1: xLocal, y1: yLocal, inCircle: pointInCircle)
         
+        // Calculate pi and update UI labels
+        piIteration = Double(innen) / Double(current) * 4.0
+        self.actualIterations.text = String(current)
+        self.piDisplay.text = String(piIteration)
         
-            self.plot(x1: x, y1: y)
-            
-            // Calculate pi
-            piIteration = Double(innen) / Double(current) * 4.0
-            self.actualIterations.text = String(current)
-            self.piDisplay.text = String(piIteration)
-            
-       
+        // Optionally await a minimal delay to yield control
+        try? await Task.sleep(nanoseconds: 1_000)  // 1,000 nanoseconds
         
-        
-        // Schedule next iteration on the main thread.
-        DispatchQueue.main.async {
-            self.iteration(current: current + 1)
-        }
+        await iteration(current: current + 1)
     }
-    
-    func plot (x1: Double, y1: Double) {
+
+    @MainActor
+    func plot(x1: Double, y1: Double, inCircle: Bool) async {
+        guard let sWidth = screenWidth, let sHeight = screenHeight else { return }
+        let screenX = Double(sWidth) * x1
+        let screenY = Double(sHeight) - Double(sHeight) * y1
         
-        let screenX = Double(screenWidth!) * x1
-        let screenY = Double(screenHeight!) - Double(screenHeight!) * y1
-        
-        
-        DispatchQueue.main.async {
-            let point = UIView(frame: CGRect(x: screenX, y: screenY, width: 1, height: 1))
-            
-            
-            
-            if isIn {
-                point.backgroundColor = UIColor.red
-            } else {
-                point.backgroundColor = UIColor.blue
-            }
-            
-            self.Container.addSubview(point)
-            //  self.Container.setNeedsDisplay()
-        }
-        
-        
-        
-        //let n = CGRect()
-        // Container.draw(n)
-        // Container.setNeedsDisplay()
-        // Container.setNeedsLayout()
-        // Container.setNeedsFocusUpdate()
-        // sleep(1)
+        let point = UIView(frame: CGRect(x: screenX, y: screenY, width: 1, height: 1))
+        point.backgroundColor = inCircle ? UIColor.red : UIColor.blue
+        self.Container.addSubview(point)
     }
     
     @IBAction func StartButton(_ sender: UIButton) {
         button.isEnabled = false
-        maxIterations = Int(maxIter.text!) ?? 10000
-        innen = 0
-        iteration()
+           maxIterations = Int(maxIter.text!) ?? 10000
+           innen = 0
+           Task {
+               await iteration(current: 1)
+               // Re-enable button when done.
+               await MainActor.run {
+                   self.button.isEnabled = true
+               }
+           }
     }
 }
 
